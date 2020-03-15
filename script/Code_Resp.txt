@@ -18,3 +18,20 @@ cc_general$PAYMENTS[cc_general$PAYMENTS > Upper_Limit["PAYMENTS"]] <- Upper_Limi
 cc_general$MINIMUM_PAYMENTS[cc_general$MINIMUM_PAYMENTS > Upper_Limit["MINIMUM_PAYMENTS"]] <- Upper_Limit["MINIMUM_PAYMENTS"]
 cc_general$PRC_FULL_PAYMENT[cc_general$PRC_FULL_PAYMENT > Upper_Limit["PRC_FULL_PAYMENT"]] <- Upper_Limit["PRC_FULL_PAYMENT"]
 cc_general$TENURE[cc_general$TENURE > Upper_Limit["TENURE"]] <- Upper_Limit["TENURE"]
+
+
+Single linkage: Salto minimo
+Complete linkage salto maximo
+group average: salto promedio
+
+average linkage: salto ward
+
+load_true, echo=FALSE
+
+```{r}
+```
+
+BALANCEFREQUENCY
+PURCHASESFREQUENCY 
+ONEOFFPURCHASESFREQUENCY
+PURCHASESINSTALLMENTSFREQUENCY

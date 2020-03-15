@@ -1,6 +1,10 @@
-# Basic statitcs
+# Basic statistics
+# Input: x vector
+# Output: Summary of statistics of the input
+
 
 cc_stats <- function(x){
+  
   #NA Values
   nas = sum(is.na(x))
   
@@ -9,19 +13,18 @@ cc_stats <- function(x){
   
   # Properties
   
-  m = mean(a)
+  m   = mean(a)
   min = min(a)
   max = max(a)
-  s = sd(a)
+  s   = sd(a)
   
   # Stats
   stats <- boxplot.stats(a)
-  n <- stats$n
-  out <- length(stats$out)
+  n     <- stats$n
+  out   <- length(stats$out)
   
-  Q95 = quantile(a, 0.95)
+  Q  = quantile(a, 0.95)
   UL = m + 3*s
-  
   
   return(c(n     = n,
            nas   = nas,
@@ -30,6 +33,6 @@ cc_stats <- function(x){
            Q_out = out,   
            Min   = min,
            Max   = max,
-           Q95   = Q95,
+           Q     = Q,
            Upper_Limit = UL))
 }
