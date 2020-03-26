@@ -1,13 +1,22 @@
-# site: https://www.kaggle.com/arjunbhasin2013/ccdata
 
+##############################################################
+# site: https://www.kaggle.com/arjunbhasin2013/ccdata
+##############################################################
+
+
+##############################################################
 # Format
 options("scipen" = 100, "digits" = 2)
-
 
 # seed
 set.seed(1234)
 
+
+
+##############################################################
 # Load the file
+##############################################################
+
 cc_general <- read.table("data/CC_General.csv",
                          header = TRUE,
                          sep = ",",
@@ -20,7 +29,9 @@ cc_general <- read.table("data/CC_General.csv",
 source("functions/stats.R")
 source("functions/normalize.R")
 
+##############################################################
 ## Basic statistics
+##############################################################
 
 vars <- c("BALANCE",
           "BALANCE_FREQUENCY",
@@ -84,9 +95,16 @@ cc_general_norm     <- data.frame(apply(cc_general[vars], 2, normalize))
 summary(cc_general_norm)
 
 
-############################################
+### Guardar la tabla generada
+
+write.table(x = cc_general_norm,
+            file = "output/data/cc_general_norm.csv"
+            , sep = ",", dec = ".")
+
+
+##############################################################
 # Exploratory analysis
-############################################
+##############################################################
 
 library(corrplot)
 
@@ -99,59 +117,70 @@ corrplot(MC_norm, type ="upper")
 
 
 
-#####################################
+##############################################################
 #k-means
-#####################################
+##############################################################
 
 library(snow)
 
-## How many k?
-
 cl <- makeCluster(4, type="SOCK")
+# Read data in each cluster
+ignore <- clusterEvalQ(cl, 
+                       { data <- read.csv("output/data/cc_general_norm.csv",
+                                           header = TRUE,
+                                           sep = ",",
+                                           dec = "."
+                                          )
+                                  NULL}) 
 
-# carga el paquete MASS en cada peón
-# haciendo visibles la Tabla de Datos Boston en cada peón o procesador
+# Hartigan-Wong
+results_HW <- clusterApply(cl,
+                           seq(1,20),
+                           function(x) kmeans(data,
+                                              centers = x,
+                                              algorithm = "Hartigan-Wong",
+                                              nstart = 50))
 
-ignore <- clusterEvalQ(cl, {library(MASS); NULL}) 
-
-#Hartigan-Wong
-results_HW <- lapply(seq(1,20), function(x) kmeans(cc_general_norm,
-                                                   centers = x,
-                                                   algorithm = "Hartigan-Wong",
-                                                   nstart = 20))
-
-variance_HW <- sapply(results_HW, function(results_HW) results_HW$tot.withinss)
+withinss_HW <-  sapply(results_HW, function(results_HW) results_HW$tot.withinss)
 
 # MacQueen
-results_MQ <- lapply(seq(1,20), function(x) kmeans(cc_general_norm,
-                                                   centers = x,
-                                                   algorithm = "MacQueen",
-                                                   nstart = 20))
+results_MQ <- clusterApply(cl,
+                           seq(1,20),
+                           function(x) kmeans(data,
+                                              centers = x,
+                                              algorithm = "MacQueen",
+                                              nstart = 50))
 
-variance_MQ <- sapply(results_MQ, function(results_MQ) results_MQ$tot.withinss)
+withinss_MQ <-  sapply(results_MQ, function(results_MQ) results_MQ$tot.withinss)
 
 # Lloyd
-results_Ll <- lapply(seq(1,20), function(x) kmeans(cc_general_norm,
-                                                   centers = x,
-                                                   algorithm = "Lloyd",
-                                                   nstart = 20))
+results_Ll <- clusterApply(cl,
+                           seq(1,20),
+                           function(x) kmeans(data,
+                                              centers = x,
+                                              algorithm = "Lloyd",
+                                              nstart = 50))
 
-variance_Ll <- sapply(results_Ll, function(results_Ll) results_Ll$tot.withinss)
+withinss_Ll <-  sapply(results_Ll, function(results_Ll) results_Ll$tot.withinss)
+
 
 # Forgy
-results_Fg <- lapply(seq(1,20), function(x) kmeans(cc_general_norm,
-                                                   centers = x,
-                                                   algorithm = "Forgy",
-                                                   nstart = 20))
+results_FG <- clusterApply(cl,
+                           seq(1,20),
+                           function(x) kmeans(data,
+                                              centers = x,
+                                              algorithm = "Forgy",
+                                              nstart = 50))
 
-variance_Fg <- sapply(results_Fg, function(results_Fg) results_Fg$tot.withinss)
+withinss_FG <-  sapply(results_FG, function(results_FG) results_FG$tot.withinss)
 
+## end cluster
 stopCluster(cl)
 
-plot(variance_HW, col = "red", type = "b", xlab = "Number of cluster k", ylab = "Sum of squares", main = "Elbow Method: No. of clusters by algorithm")
-points(variance_MQ, col = "blue", type = "b")
-points(variance_Ll, col = "green", type = "b")
-points(variance_Fg, col = "magenta", type = "b")
+plot(withinss_HW, col = "red", type = "b", xlab = "Number of cluster k", ylab = "Sum of squares", main = "Elbow Method: No. of clusters by algorithm")
+points(withinss_MQ, col = "blue", type = "b")
+points(withinss_Ll, col = "green", type = "b")
+points(withinss_FG, col = "magenta", type = "b")
 legend("topright",
        legend = c("Hartigan","MacQueen","Lloyd","Forgy"), 
        col = c("red", "blue", "green", "magenta"), 
@@ -159,98 +188,85 @@ legend("topright",
        lwd = 1)
 
 
-## Which method:
+## 5 groups base on jambu
+library(snow)
 
+cl <- makeCluster(4, type="SOCK")
+# Read data in each cluster
+ignore <- clusterEvalQ(cl, 
+                       { data <- read.csv("output/data/cc_general_norm.csv",
+                                          header = TRUE,
+                                          sep = ",",
+                                          dec = "."
+                       )
+                       set.seed(1234)
+                       NULL}) 
 
-# Hartigan-Wong
-results_HW <- lapply(seq(1,20), function(x) kmeans(cc_general_norm, 
-                                                   centers = 4,
-                                                   nstart = 20,
-                                                   algorithm = "Hartigan-Wong"))
-betweenss_HW <- sapply(results_HW, function(results_HW) results_HW$betweenss)
-
-# MacQueen
-results_MQ <- lapply(seq(1,20), function(x) kmeans(cc_general_norm, 
-                                                   centers = 4,
-                                                   nstart = 20,
-                                                   algorithm = "MacQueen"))
-betweenss_MQ <- sapply(results_MQ, function(results_MQ) results_MQ$betweenss)
-
-
-# Lloyd
-results_Ll <- lapply(seq(1,20), function(x) kmeans(cc_general_norm, 
-                                                   centers = 4,
-                                                   nstart = 20,
-                                                   algorithm = "Lloyd"))
-betweenss_Ll <- sapply(results_Ll, function(results_Ll) results_Ll$betweenss)
-
-
-# Forgy
-results_Fg <- lapply(seq(1,20), function(x) kmeans(cc_general_norm, 
-                                                   centers = 4,
-                                                   nstart = 20,
-                                                   algorithm = "Forgy"))
-betweenss_Fg <- sapply(results_Fg, function(results_Fg) results_Fg$betweenss)
+# Evaluate all the posible algorithms
+results_Algorithm <- clusterApply(cl,
+                           c("Hartigan-Wong","MacQueen","Lloyd","Forgy"),
+                           function(algorithm) kmeans(data,
+                                              centers = 5,
+                                              algorithm = algorithm,
+                                              nstart = 50))
+for(i in 1:4) print(results_Algorithm[[i]]$betweenss)
+# end cluster
+stopCluster(cl)
 
 
 
-AVG_Between_Class <- data.frame(Method = c("Hartigan-Wong", "MacQueen", "Lloyd", "Forgy"),
-                                AVG_Between_Class = c(mean(betweenss_HW), mean(betweenss_MQ),
-                                                      mean(betweenss_Ll),mean(betweenss_Fg))
+## Hartigan-Wong 
+
+cc_general_norm <- read.csv("output/data/cc_general_norm.csv",
+header = TRUE,
+sep = ",",
+dec = "."
 )
 
-AVG_Between_Class
+Cluster_HW <- kmeans(x = cc_general_norm,
+                     centers =  5,
+                     nstart = 250,
+                     algorithm = "Hartigan-Wong")
 
-## With Lloyd method
-
-Cluster_FG <- kmeans(x = cc_general_norm,
-                     centers =  4,
-                     iter.max = 100,
-                     nstart = 20,
-                     algorithm = "Lloyd")
-
-Cluster_FG
+Cluster_HW
 
 # Points in each cluster
-Cluster_FG$size
+Cluster_HW$size
 
 #Cluster center
-colnames(Cluster_FG$centers)
+colnames(Cluster_HW$centers)
+
+
+color = grDevices::colors()[grep('gr(a|e)y', grDevices::colors(), invert = T)]
+set.seed(1234)
+palette <- sample(color, 17)
+
+palette <- c("orange4", "red2", "tomato", "darkseagreen1",  "deeppink3", "steelblue2", "gold1",         
+             "wheat", "tan4", "springgreen2", "darkred", "darkseagreen3", "lightskyblue", "darkorange2",   
+             "plum3", "darkgoldenrod4", "skyblue1") 
 
 
 
-barplot(t(Cluster_FG$centers),
-        main = "Centers by cluster",
+barplot(t(Cluster_HW$centers),
+        main = "Centers by cluster K-means clustering",
         xlab = "Cluster",
         beside = TRUE, 
-        col = rainbow(17)
+        col = palette,
+        ylim = c(0, 1.5)
         )
+abline(h = 0.5, col=3, lty=3)
+text(5, 0.55, labels= "Center > 0.5", col = "blue", adj = c(0, 0), font=2, cex= 0.8 )
+
 legend("topright", 
-       legend = colnames(Cluster_FG$centers),
-       fill = rainbow(17), ncol = 2,
-       cex = 0.75)
+       legend = colnames(Cluster_HW$centers),
+       fill = palette, ncol = 2,
+       cex = 0.6)
 
 
-## Observations:
-### Cluter 1: high oneoff_purchase
-### Cluter 2: Low purchase, low installments_purc , low purchase freq, one off pruchase ffreq, low purchase installme freq
-###           high cash advance frequency
-                  
-### Cluter 3: LOW ORC_FULL_PAYMENT
-### Cluter 4:  Low balance, low cash advance
 
-## no discrimination:
-#BALANCE_FREQUENCY (H:C1)
-#CASH ADVANCE_TRX (H:C2)
-# PURCHASE_TRX (H:C1)
-# CREDIT_LIMIT (H:C1)
-# PAYMENTS (H:C1)
-#TENURE (H:C1, L:C4)
-
-
-#####################################
+##############################################################
 #CJ
-#####################################
+##############################################################
 
 # 1 normalize for BD
 
@@ -265,12 +281,12 @@ rect.hclust(model_avg, k = 4, border = "blue")
 model_Ward <- hclust(dist(cc_general_norm), method = "ward.D2")
 
 plot(model_Ward, labels = FALSE)
-rect.hclust(model_Ward, k = 4, border = "blue")
+rect.hclust(model_Ward, k = 5, border = "blue")
 
 
 ## sAVE DATA WITH THE GROUP
 
-cluster <- cutree(model_Ward, k = 4)
+cluster <- cutree(model_Ward, k = 5)
 
 cc_general_norm_cluster <-cbind(cc_general_norm, cluster)
 
@@ -278,16 +294,24 @@ library(rattle)
 
 cc_general_center <- centers.hclust(cc_general_norm,
                                     model_Ward,
-                                    nclust = 4,
+                                    nclust = 5,
                                     use.median = FALSE)
 
 
+str(cc_general_center)
+
+colnames(cc_general_center)
 
 barplot(t(cc_general_center),
         beside = TRUE,
         main = "Cluster Interpretation",
-        col = rainbow(17)
+        col = palette
         )
+legend("topright", 
+       legend = colnames(cc_general_center),
+       fill = palette, ncol = 2,
+       cex = 0.6)
+
 
 
 ## radar graph
@@ -296,6 +320,9 @@ maximos <- apply(center,2,max)
 minimos <- apply(center,2,min)
 center  <- rbind(minimos,center)
 center  <- rbind(maximos,center)
+
+colnames(center) <- c("BAL", "BAL_FREQ", "PURCH", "ONEOFF_PURCH","INST_PURCH.","CASH_ADV","PURCH._FREQ","ONEOFF_PURCH_FREQ","PURCH_INSTALL_FREQ" ,"CASH_ADV_FREQ","CASH_ADV_TRX","PURCH_TRX","CRED_LIM","PAY","MIN_PAY","PRC_PAY","TENURE")
+
 
 
 library(fmsb)
@@ -306,20 +333,21 @@ radarchart(center,
            centerzero = FALSE,
            seg = 8,
            cglcol = "gray67",
-           pcol=c("green","blue","red", "purple", "black", "brown"),
+           pcol= palette,
            plty = 1,
            plwd = 5,
-           title = "Comparación de clústeres")
-
-
-legenda <-legend(1.5,1, legend=c("Cluster 1","Cluster 2","Cluster 3", "Cluster 4"),
+           title = "Comparacion de clusteres")
+legenda <-legend(1.5,1, legend=c("Cluster 1","Cluster 2","Cluster 3", "Cluster 4", "Cluster 5"),
                  seg.len=-1.4,
-                 title="Clústeres",
+                 title="Clusteres",
                  pch=21, 
                  bty="n" ,lwd=3, y.intersp=1, horiz=FALSE,
-                 col=c("green","blue","red", "purple", "black", "brown")
+                 col= palette
                  )
 
+
+install.packages("devtools")
+devtools::install_github("ricardo-bion/ggradar")
 
 
 # Convert hclust into a dendrogram and plot
