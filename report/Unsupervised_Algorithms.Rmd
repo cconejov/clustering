@@ -130,13 +130,13 @@ We create the function _**cc_stats()**_ for analyzing some of the characteristic
 
 * Standard desviation of complete observations.
 
-* Number of outliers observations ($Q3 + 1.5IQR$)
+* Number of outliers observations. ($Q3 + 1.5IQR$)
 
 * Minimun value of complete observations.
 
 * Maximun value of complete observations.
 
-* 95 quantile
+* 95 quantile.
 
 * Upper limit for the value. (mean + 3 sd)
 
@@ -186,7 +186,7 @@ Using the function _**apply()**_, we see the statistical characteristics for eac
 
 ```{r}
 
-# Vector with the name of the variable
+# Vector with the name of variables
 vars <- c("BALANCE",
           "BALANCE_FREQUENCY",
           "PURCHASES",
@@ -227,14 +227,14 @@ As a result, the `NA` values do not occur in the same row. For fixing these unkn
 
 * Use tools that handle these types of values.
 
-In this case, the unknown values only represent `r round(sum(is.na(cc_general$CREDIT_LIMIT) | is.na(cc_general$MINIMUM_PAYMENTS))/8950*100,2)`%, so we decide delete that observations.
+In this case, the unknown values only represent `r round(sum(is.na(cc_general$CREDIT_LIMIT) | is.na(cc_general$MINIMUM_PAYMENTS))/8950*100,2)`% of the data, so we decide to delete  the observations.
 
 ```{r}
 cc_general <- cc_general[-which(is.na(cc_general$CREDIT_LIMIT) 
                               | is.na(cc_general$MINIMUM_PAYMENTS)),]
 ```
 
-Other thing we see is that the variables are measure in diferent scales. For example _BALANCE FREQUENCY_, _PURCHASES FREQUENCY_, _ONE OFF PURCHASES FREQUENCY_ and  _PURCHASES INSTALLMENTS FREQUENCY_ are measure with a score between 0 and 1. Other values are measure in money units and others in number of transactions. Because there are different units then we should scaling variables. We do that with the function _**normalize()**_:
+Another aspect we see is that the variables are measure in different scales. For example _BALANCE FREQUENCY_, _PURCHASES FREQUENCY_, _ONE OFF PURCHASES FREQUENCY_ and  _PURCHASES INSTALLMENTS FREQUENCY_ are measure with a score between 0 and 1. Other values are measure in money units and others in the number of transactions. Because there are different units then we should scaling variables. We do that with the function _**normalize()**_:
 
 ```{r eval=FALSE}
 ---
@@ -252,10 +252,10 @@ normalize <- function(x){
 }
 ```
 
-Then, we apply the function to each variable
+Then, we apply the function to each variable:
 
 ```{r}
-cc_general_norm     <- data.frame(apply(cc_general[vars], 2, normalize))
+cc_general_norm <- data.frame(apply(cc_general[vars], 2, normalize))
 ```
 
 Finally, we apply _**cc_stats()**_ again for seeing the changes in our data.
@@ -266,19 +266,27 @@ describe_stats_norm
 
 ```
 
-Now, all the variables are in a scale from 0 to 1. Also, 
-there is no change in the variance of the variables.
+Now, all the variables are on a scale from 0 to 1. Also, there is no change in the variance of the variables because we are only scaling and no standardizing. Finally, we save the new data set for being used as the source in the parallel executions:
+
+```{r eval = FALSE}
+#Save table
+write.table(x = cc_general_norm,
+            file = "output/data/cc_general_norm.csv",
+            sep = ",",
+            dec = ".")
+
+```
 
 
 ## **K-means**
 
-For applying the _k-means_, we develop the following code. We set the seed $1234$ for reproducibility purposes. 
+For applying _k-means_, we develop the following code. We set the seed $1234$ for reproducibility purposes. 
 
 ```{r}
 set.seed(1234)
 ```
 
-First, we need decide the number of cluster. We apply K-means clustering to the data using the following techniques:
+First, we need to decide the number of clusters. We apply K-means clustering to the data using the following techniques:
 
 * Hartigan-Wong
 
@@ -288,157 +296,197 @@ First, we need decide the number of cluster. We apply K-means clustering to the 
 
 * Forgy
 
+Also, we use the `snow` library for performing parallelizable operations.
 
 ```{r eval = FALSE}
-
 library(snow)
 
-# How many k?
-
 cl <- makeCluster(4, type="SOCK")
+# Read data in each cluster
+ignore <- clusterEvalQ(cl, 
+                       { data <- read.csv("output/data/cc_general_norm.csv",
+                                           header = TRUE,
+                                           sep = ",",
+                                           dec = "."
+                                          )
+                                  set.seed(1234)
+                                  NULL}) 
 
-ignore <- clusterEvalQ(cl, {library(MASS); NULL}) 
+# Hartigan-Wong
+results_HW <- clusterApply(cl,
+                           seq(1,20),
+                           function(x) kmeans(data,
+                                              centers = x,
+                                              algorithm = "Hartigan-Wong",
+                                              nstart = 50))
 
-#Hartigan-Wong
-results_HW <- lapply(seq(1,20), function(x) kmeans(cc_general_norm,
-                                                   centers = x,
-                                                   algorithm = "Hartigan-Wong",
-                                                   nstart = 20))
-
-variance_HW <- sapply(results_HW, function(results_HW) results_HW$tot.withinss)
+withinss_HW <-  sapply(results_HW, function(results_HW) results_HW$tot.withinss)
 
 # MacQueen
-results_MQ <- lapply(seq(1,20), function(x) kmeans(cc_general_norm,
-                                                   centers = x,
-                                                   algorithm = "MacQueen",
-                                                   nstart = 20))
+results_MQ <- clusterApply(cl,
+                           seq(1,20),
+                           function(x) kmeans(data,
+                                              centers = x,
+                                              algorithm = "MacQueen",
+                                              nstart = 50))
 
-variance_MQ <- sapply(results_MQ, function(results_MQ) results_MQ$tot.withinss)
+withinss_MQ <-  sapply(results_MQ, function(results_MQ) results_MQ$tot.withinss)
 
 # Lloyd
-results_Ll <- lapply(seq(1,20), function(x) kmeans(cc_general_norm,
-                                                   centers = x,
-                                                   algorithm = "Lloyd",
-                                                   nstart = 20))
+results_Ll <- clusterApply(cl,
+                           seq(1,20),
+                           function(x) kmeans(data,
+                                              centers = x,
+                                              algorithm = "Lloyd",
+                                              nstart = 50))
 
-variance_Ll <- sapply(results_Ll, function(results_Ll) results_Ll$tot.withinss)
+withinss_Ll <-  sapply(results_Ll, function(results_Ll) results_Ll$tot.withinss)
+
 
 # Forgy
-results_Fg <- lapply(seq(1,20), function(x) kmeans(cc_general_norm,
-                                                   centers = x,
-                                                   algorithm = "Forgy",
-                                                   nstart = 20))
+results_FG <- clusterApply(cl,
+                           seq(1,20),
+                           function(x) kmeans(data,
+                                              centers = x,
+                                              algorithm = "Forgy",
+                                              nstart = 50))
 
-variance_Fg <- sapply(results_Fg, function(results_Fg) results_Fg$tot.withinss)
+withinss_FG <-  sapply(results_FG, function(results_FG) results_FG$tot.withinss)
 
+# end paralell
 stopCluster(cl)
 ```
 
-Then, we can observe the total within-cluster sum of squares for K-means clustering for some cluster from 1 to 20. 
+Then, we can observe the total within-cluster sum of squares for K-means clustering for some clusters from 1 to 20. 
 
 ```{r eval = FALSE}
-plot(variance_HW, 
+plot(withinss_HW, 
      col = "red",
-     type = "b", 
+     type = "b",
      xlab = "Number of cluster k",
-     ylab = "Sum of squares", 
+     ylab = "Sum of squares",
      main = "Elbow Method: No. of clusters by algorithm")
-points(variance_MQ, col = "blue", type = "b")
-points(variance_Ll, col = "green", type = "b")
-points(variance_Fg, col = "magenta", type = "b")
+points(withinss_MQ, col = "blue",    type = "b")
+points(withinss_Ll, col = "green",   type = "b")
+points(withinss_FG, col = "magenta", type = "b")
 legend("topright",
        legend = c("Hartigan","MacQueen","Lloyd","Forgy"), 
        col = c("red", "blue", "green", "magenta"), 
        lty = 1, 
        lwd = 1)
 ```
+![Total within-cluster sum of squares for K-means clustering](C:/Users/CCONE/Documents/Cesar_Conejo/03-Data_Science/00-DS_Projects/Versionamiento_R/clustering/output/graphs/p1_elbow_method.png){width=400px}
 
-We can see that the kink occur at $k = 4$, so this is the number of cluster that we propose for the marketing strategy. ![Total within-cluster sum of squares for K-means clustering](C:/Users/CCONE/Documents/Cesar_Conejo/03-Data_Science/00-DS_Projects/Versionamiento_R/clustering/output/graphs/p1_elbow_method_norm.png)
 
-Now, the question that we need to answer is which method for k-means to use. Therefore, we code the following lines that shows the results of the clustering in 4 groups. 
+We can see that the kink occurs at $k = 5$, so this is the number of clusters that we propose for the marketing strategy. Now, the question that we need to answer is which method for k-means to use. Therefore, we code the following lines that show the results of the clustering in 5 groups.
 
 ```{r eval = FALSE}
 # Which method:
+cl <- makeCluster(4, type="SOCK")
+# Read data in each cluster
+ignore <- clusterEvalQ(cl, 
+                       { data <- read.csv("output/data/cc_general_norm.csv",
+                                          header = TRUE,
+                                          sep = ",",
+                                          dec = "."
+                       )
+                       set.seed(1234)
+                       NULL}) 
 
-# Hartigan-Wong
-results_HW <- lapply(seq(1,20), function(x) kmeans(cc_general_norm, 
-                                                   centers = 4,
-                                                   nstart = 20,
-                                                   algorithm = "Hartigan-Wong"))
-betweenss_HW <- sapply(results_HW, function(results_HW) results_HW$betweenss)
-
-# MacQueen
-results_MQ <- lapply(seq(1,20), function(x) kmeans(cc_general_norm, 
-                                                   centers = 4,
-                                                   nstart = 20,
-                                                   algorithm = "MacQueen"))
-betweenss_MQ <- sapply(results_MQ, function(results_MQ) results_MQ$betweenss)
-
-
-# Lloyd
-results_Ll <- lapply(seq(1,20), function(x) kmeans(cc_general_norm, 
-                                                   centers = 4,
-                                                   nstart = 20,
-                                                   algorithm = "Lloyd"))
-betweenss_Ll <- sapply(results_Ll, function(results_Ll) results_Ll$betweenss)
-
-
-# Forgy
-results_Fg <- lapply(seq(1,20), function(x) kmeans(cc_general_norm, 
-                                                   centers = 4,
-                                                   nstart = 20,
-                                                   algorithm = "Forgy"))
-betweenss_Fg <- sapply(results_Fg, function(results_Fg) results_Fg$betweenss)
-
-
-
-AVG_Between_Class <- data.frame(Method = c("Hartigan-Wong", "MacQueen", 
-                                           "Lloyd", "Forgy"),
-                     AVG_Between_Class = c(mean(betweenss_HW), mean(betweenss_MQ),
-                                           mean(betweenss_Ll),mean(betweenss_Fg))
-)
+# Evaluate all the posible algorithms
+results_Algorithm <- clusterApply(cl,
+                           c("Hartigan-Wong","MacQueen","Lloyd","Forgy"),
+                           function(algorithm) kmeans(data,
+                                              centers = 5,
+                                              algorithm = algorithm,
+                                              nstart = 50))
+for(i in 1:4) print(results_Algorithm[[i]]$betweenss)
+# end cluster
+stopCluster(cl)
 
 ```
 
 
-```markdown
 
-Method        | Avg between
-------------- | -------------
-Hartigan-Wong | 3222.460
-MacQueen      | 3221.499
-Lloyd         | 3220.927
-Forgy         | 3221.112
+```{r load_true2, echo = FALSE}
+# Which method:
+library(snow)
+cl <- makeCluster(4, type="SOCK")
+# Read data in each cluster
+ignore <- clusterEvalQ(cl, 
+                       { data <- read.csv("C:/Users/CCONE/Documents/Cesar_Conejo/03-Data_Science/00-DS_Projects/Versionamiento_R/clustering/output/data/cc_general_norm.csv",
+                                          header = TRUE,
+                                          sep = ",",
+                                          dec = "."
+                       )
+                       set.seed(1234)
+                       NULL}) 
 
+# Evaluate all the posible algorithms
+results_Algorithm <- clusterApply(cl,
+                           c("Hartigan-Wong","MacQueen","Lloyd","Forgy"),
+                           function(algorithm) kmeans(data,
+                                              centers = 5,
+                                              algorithm = algorithm,
+                                              nstart = 50))
+for(i in 1:4) print(results_Algorithm[[i]]$betweenss)
+# end cluster
+stopCluster(cl)
 ```
 
-Because Lloyd reachs the minimun average between-cluster point scatter, we choose that method. As a result, we code the method in the following way:
+
+Because _Hartigan-Wong_ reaches the greatest (Also MacQueen does) between-cluster point scatter value, we choose that method. As a result, we code the method in the following way:
 
 ```{r}
-Cluster_FG <- kmeans(x = cc_general_norm,
-                     centers =  4,
-                     iter.max = 100,
-                     nstart = 20,
-                     algorithm = "Lloyd")
+Cluster_HW <- kmeans(x = cc_general_norm,
+                     centers =  5,
+                     nstart = 250,
+                     algorithm = "Hartigan-Wong")
 
 ```
 
-Finally, we can see some properties of the cluster. For example, the number of observations by cluster is:
+Finally, we can see some properties of the cluster. For example, the number of observations by the cluster is:
 
 ```{r}
-Cluster_FG$size
+Cluster_HW$size
 ```
 
 In this case, we can see that the classes are well balanced. Also, we can see the center of each cluster and realize some interpretations.
 
 ```{r}
-barplot(t(Cluster_FG$centers),
-        main = "Centers by cluster",
+palette <- c("orange4", "red2", "tomato", "darkseagreen1",  "deeppink3", "steelblue2", 
+             "gold1", "wheat", "tan4", "springgreen2", "darkred", "darkseagreen3", 
+             "lightskyblue", "darkorange2", "plum3", "darkgoldenrod4", "skyblue1") 
+
+# Graph
+barplot(t(Cluster_HW$centers),
+        main = "Centers by cluster K-means clustering",
         xlab = "Cluster",
         beside = TRUE, 
-        col = rainbow(17)
+        col = palette,
+        ylim = c(0, 1.9)
         )
+abline(h = 0.5, col = 3, lty = 3)
+text(5, 0.55, labels= "Center > 0.5", col = "blue", adj = c(0, 0), font=2, cex= 0.8 )
+legend("topright", 
+       legend = colnames(Cluster_HW$centers),
+       fill = palette, ncol = 2,
+       cex = 0.6)
 ```
+
+In cluster 1, these customers have the highest value in ONEOFF_PURCHASES_FREQUENCY. So, this group usually does the greatest purchase amount done in one-go.
+
+Cluster 2 and 4 have the highest value in purchases_installments_frequency, so these customers used frequently their credit cards.  But cluster 2 has the highest value in PRC_FULL_PAYMENT, so this is a cluster of customers that used their card and also pay the products. 
+
+Cluster 3 has customers with less Purchase frequency, so this group does not make frequent purchases with their credit cards.
+Finally, cluster 5 has customers with less balance, balance frequency,  and purchase installments frequency.  This group is similar to group 3 because this is the group of customers that do not use frequently their credit cards, so their balance is not frequently updated.
+
+In this way, we can segment the marketing strategy among these groups.
+
+1) Customers with a high amount of purchases.
+2) Customers that used their cards frequently.
+3) Customers that no use their cards frequently. 
+
 
 ## **Hierachical cluster**
 
@@ -448,45 +496,59 @@ Using _**Ward**_ aggregation, we code the method in the following way:
 
 model_Ward <- hclust(dist(cc_general_norm), method = "ward.D2")
 
-plot(model_Ward, labels = FALSE)
-rect.hclust(model_Ward, k = 4, border = "blue")
+plot(model_Ward, labels = FALSE, xlab = "Hierachical cluster using Ward")
+rect.hclust(model_Ward, k = 5, border = "blue")
 ```
 
-
-
-
 ```{r}
-cluster <- cutree(model_Ward, k = 4)
+cluster <- cutree(model_Ward, k = 5)
 cc_general_norm_cluster <-cbind(cc_general_norm, cluster)
 library(rattle)
 cc_general_center <- centers.hclust(cc_general_norm,
                                     model_Ward,
-                                    nclust = 4,
+                                    nclust = 5,
                                     use.median = FALSE)
 ```
 
-
-As in _k-means_, we can see the properties of the centers cluster in the following graph
+As in _k-means_, we can see the properties of the centers cluster in the following graph:
 
 ```{r}
 
 barplot(t(cc_general_center),
         beside = TRUE,
-        main = "Cluster Interpretation Hierarchical Classification",
-        col = rainbow(17)
+        main = "Center by cluster Hierarchical Classification",
+        col = palette,
+        ylim = c(0, 1.9)
         )
+abline(h = 0.5, col = 3, lty = 3)
+text(5, 0.55, labels= "Center > 0.5", col = "blue", adj = c(0, 0), font=2, cex= 0.8 )
+legend("topright", 
+       legend = colnames(cc_general_center),
+       fill = palette, ncol = 2,
+       cex = 0.6)
 
 ```
+For interpretation of the results, we can use the radar chart
+
+* In cluster 1, the most important variables are balance and cash advance.
+* In cluster 2 the most important variable is purchase frequency.
+* In cluster 3 the most important variable is One-off purchase frequency.
+* Cluster 4 has the highest influence on several of the variables.
+* Cluster 5 has the influence of the variable PRC_Payments.
 
 ```{r}
 
-
-## radar graph
+# radar graph
 center  <- as.data.frame(cc_general_center)
 maximos <- apply(center,2,max)
 minimos <- apply(center,2,min)
 center  <- rbind(minimos,center)
 center  <- rbind(maximos,center)
+colnames(center) <- c("BAL", "BAL_FREQ", "PURCH", "ONEOFF_PURCH","INST_PURCH.",
+                      "CASH_ADV", "PURCH._FREQ", "ONEOFF_PURCH_FREQ",
+                      "PURCH_INSTALL_FREQ","CASH_ADV_FREQ", "CASH_ADV_TRX",
+                      "PURCH_TRX", "CRED_LIM", "PAY", "MIN_PAY", "PRC_PAY", "TENURE")
+
 ```
 
 
@@ -499,28 +561,19 @@ radarchart(center,
            centerzero = FALSE,
            seg = 8,
            cglcol = "gray67",
-           pcol=c("green","blue","red", "purple", "black", "brown"),
+           pcol= palette,
            plty = 1,
            plwd = 5,
-           title = "Comparación de clústeres")
-
-
-legenda <-legend(1.5,1, legend=c("Cluster 1","Cluster 2","Cluster 3", "Cluster 4"),
+           title = "Cluster comparation Hierarchical Classification")
+det_radar   <-legend(1.5,1, legend=c("Cluster 1","Cluster 2","Cluster 3",
+                                     "Cluster 4", "Cluster 5"),
                  seg.len=-1.4,
-                 title="Clústeres",
+                 title="Cluster",
                  pch=21, 
                  bty="n" ,lwd=3, y.intersp=1, horiz=FALSE,
-                 col=c("green","blue","red", "purple", "black", "brown")
+                 col= palette
                  )
 ```
-
-
-# Conclusion
-
-
-
-
-
 
 
 <!--
